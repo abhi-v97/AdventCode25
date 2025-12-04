@@ -12,7 +12,7 @@ long long getLargest(char *buffer, int digits)
   {
     int temp = 1;
 
-    for (int i = pos; buffer[i] && i < (101 - digits - 1); i++) 
+    for (int i = pos; buffer[i] && i < (100 - digits); i++) 
     {
       if ((buffer[i] - '0') > temp)
       {
@@ -31,13 +31,12 @@ void printResult(int digits)
 {
   FILE *file;
   size_t result;
+  size_t size = 100;
+  char *buffer;
 
   file = fopen("input", "r");
   if (file < 0)
     return ;
-
-  size_t size = 100;
-  char *buffer;
 
   buffer = (char *) malloc(sizeof(char) * 101);
   buffer[100] = '\0';
@@ -45,15 +44,11 @@ void printResult(int digits)
   if (buffer == NULL)
     return ;
 
-  int pos = 0;
-
   int bytes = getline(&buffer, &size, file);
-  result = 0;
 
+  result = 0;
   while (bytes > 0)
   {
-    pos = 0;
-
     result += getLargest(buffer, digits);
     bytes = getline(&buffer, &size, file);
     buffer[100] = '\0';
