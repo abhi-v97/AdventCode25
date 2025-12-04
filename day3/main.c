@@ -2,6 +2,15 @@
 #include "stdlib.h"
 #include "math.h"
 
+/**
+* Search from left to right for the largest digit. However, you don't want to
+* pick 9 if its the last number. You need to leave a gap so that you can fill
+* in the rest of the digits.
+*
+* The cut-off is simply line_size - num_of_digits.
+*
+* So, you find the biggest digit just before the cutoff for each subsequent digit.
+*/
 long long getLargest(char *buffer, int digits)
 {
   long long result = 0;
