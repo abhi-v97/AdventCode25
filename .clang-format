@@ -1,0 +1,62 @@
+BasedOnStyle: Microsoft
+
+AccessModifierOffset: -4
+AllowShortBlocksOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortNamespacesOnASingleLine: false
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBraces: Allman
+BreakBeforeTernaryOperators: false
+BreakStringLiterals: true
+ColumnLimit: 100
+CompactNamespaces: false
+ContinuationIndentWidth: 4
+FixNamespaceComments: false
+IncludeBlocks: Regroup
+IncludeCategories:
+- Regex:           '<.+>'
+  Priority:        -30
+- Regex:           '"[^.].*"'
+  Priority:        -20
+- Regex:           '".+"'
+  Priority:        -10
+IndentWidth: 4
+InsertNewlineAtEOF: true
+KeepEmptyLines:
+  AtEndOfFile: true
+  AtStartOfBlock: true
+  AtStartOfFile: true
+LineEnding: LF
+MaxEmptyLinesToKeep: 1
+NamespaceIndentation: All
+PointerAlignment: Right
+QualifierAlignment: Left
+ReferenceAlignment: Right
+ReflowComments: Always
+RemoveEmptyLinesInUnwrappedLines: true
+# RemoveParentheses: ReturnStatement
+RemoveSemicolon: true
+SeparateDefinitionBlocks: Always
+SortIncludes: CaseSensitive
+SpaceAfterCStyleCast: true
+SpaceAfterLogicalNot: false
+SpaceAfterTemplateKeyword: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
+SpaceBeforeCtorInitializerColon: false
+SpaceBeforeInheritanceColon: false
+SpaceBeforeJsonColon: false
+SpaceBeforeParens: ControlStatementsExceptControlMacros
+SpaceBeforeRangeBasedForLoopColon: false
+SpaceBeforeSquareBrackets: false
+SpacesBeforeTrailingComments: 1
+SpacesInAngles: Leave
+SpacesInLineCommentPrefix:
+  Minimum: 1
+SpacesInParens: Never
+SpacesInSquareBrackets: false
+TabWidth: 4
+UseTab: Always
+AlignConsecutiveDeclarations: Consecutive
