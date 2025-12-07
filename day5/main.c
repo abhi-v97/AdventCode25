@@ -4,181 +4,131 @@
 #include "stdio.h"
 #include "stdlib.h"
 
-typedef struct s_bigint
+typedef struct s_range
 {
-	char			*min;
-	char			*max;
-	int				 certified_fresh;
-	struct s_bigint *next;
-} t_bigint;
+	long long min;
+	long long max;
+} t_range;
 
-void lst_addnew(t_bigint **head, t_bigint *new)
+int		comp(const void *a, const void *b);
+int		get_ranges(t_range ranges[200], FILE *file);
+int		check_ingredient(t_range ranges2[200], char *buffer, int count);
+t_range lst_new(char *buffer);
+int		remove_overlap(t_range old[200], t_range new[200], int size);
+
+int main()
 {
-	t_bigint *temp = NULL;
+	t_range orig_ranges[200];
+	int		old_size;
+	FILE   *file = fopen("input", "r");
 
-	if (head == NULL)
-		return;
+	old_size = get_ranges(orig_ranges, file);
 
-	if (*head == NULL)
-	{
-		*head = new;
-	}
-	else
-	{
-		temp = *head;
-		while (temp->next != NULL)
-			temp = temp->next;
-		temp->next = new;
-	}
-}
+	t_range new_ranges[200];
+	int		new_size = remove_overlap(orig_ranges, new_ranges, old_size);
 
-t_bigint *lst_newnode(char *buffer)
-{
-	t_bigint *new;
-
-	new = (t_bigint *) malloc(sizeof(t_bigint));
-
-	int min_size = 0;
-	while (buffer[min_size] != '-')
-		min_size++;
-
-	new->min = (char *) malloc((min_size + 1) * sizeof(char));
-	for (int i = 0; i < min_size; i++)
-		new->min[i] = buffer[i];
-
-	int max_size = 0;
-	while (buffer[min_size + max_size + 1] && buffer[min_size + max_size + 1] != '\n')
-		max_size++;
-
-	new->max = (char *) malloc((max_size + 1) * sizeof(char));
-	for (int i = 0; i < max_size; i++)
-		new->max[i] = buffer[i + min_size + 1];
-
-	new->min[min_size] = '\0';
-	new->max[max_size] = '\0';
-	new->next = NULL;
-	new->certified_fresh = 0;
-	// printf("min = %s, max = %s\n", new->min, new->max);
-	return (new);
-}
-
-void create_dict(t_bigint **head, FILE *file)
-{
 	char   *buffer = NULL;
 	size_t	bytes = 0;
-	ssize_t read = 0;
-
-	read = getline(&buffer, &bytes, file);
-	while (read > 0 && buffer[0] != '\n')
+	int		fresh = 0;
+	ssize_t read = getline(&buffer, &bytes, file);
+	while (read > 0)
 	{
-		lst_addnew(head, lst_newnode(buffer));
+		buffer[read - 1] = '\0';
+		fresh += check_ingredient(new_ranges, buffer, new_size);
 		free(buffer);
 		buffer = NULL;
 		bytes = 0;
 		read = getline(&buffer, &bytes, file);
 	}
 	free(buffer);
-}
 
-int is_above_min(char *min, char *buffer)
-{
-	int min_size = strlen(min);
-	int buf_size = strlen(buffer) - 1;
+	unsigned long long result = 0;
+	for (int i = 0; i < new_size; i++)
+		result += new_ranges[i].max - new_ranges[i].min;
 
-	if (buf_size > min_size)
-		return (1);
-	else if (buf_size == min_size)
-	{
-		int i = 0;
-		while (buffer[i + 1] != '\n' && buffer[i] == min[i])
-			i++;
-		if (buffer[i] >= min[i])
-			return (1);
-		else
-			return (0);
-	}
+	printf("Fresh ingredients: %i\n", fresh);
+	printf("Total fresh ID ranges: %lli\n", result);
+
+	fclose(file);
 	return (0);
 }
 
-int is_below_max(char *max, char *buffer)
+// parse file for ID ranges, store info in parameter ranges
+// returns number of ranges given in file
+int get_ranges(t_range ranges[200], FILE *file)
 {
-	int max_size = strlen(max);
-	int buf_size = strlen(buffer) - 1;
-
-	if (buf_size > max_size)
-		return (0);
-	else if (buf_size == max_size)
-	{
-		int i = 0;
-		while (buffer[i + 1] != '\n' && buffer[i] == max[i])
-			i++;
-		if (buffer[i] <= max[i])
-			return (1);
-		else
-			return (0);
-	}
-	return (0);
-}
-
-int compare_ranges(t_bigint **head, char *buffer)
-{
-	t_bigint *temp = *head;
-
-	while (temp != NULL)
-	{
-		if (is_above_min(temp->min, buffer) && is_below_max(temp->max, buffer))
-		{
-			temp->certified_fresh = 1;
-			return (1);
-		}
-		temp = temp->next;
-	}
-	return (0);
-}
-
-int subtract(char *min, char *max)
-{
-	int result = 0;
-	
-	return (result);
-}
-
-int main()
-{
-	t_bigint **list;
-	FILE	  *file = fopen("input", "r");
-
-	list = (t_bigint **) malloc(sizeof(t_bigint *));
-	*list = NULL;
-	create_dict(list, file);
-
-	t_bigint *temp = *list;
-	char	 *buffer = NULL;
-	size_t	  bytes = 0;
-	ssize_t	  read = 0;
+	char   *buffer = NULL;
+	size_t	bytes = 0;
+	ssize_t read = 0;
+	int		count = 0;
 
 	read = getline(&buffer, &bytes, file);
-	int fresh = 0;
-	int count = 0;
-	while (read > 0)
+	while (read > 0 && buffer[0] != '\n')
 	{
-		if (compare_ranges(list, buffer))
-			fresh++;
-
+		ranges[count] = lst_new(buffer);
 		free(buffer);
 		buffer = NULL;
 		bytes = 0;
 		read = getline(&buffer, &bytes, file);
 		count++;
 	}
-	
-	count = 0;
-	for (t_bigint *temp = *list; temp != NULL; temp = temp->next)
+	qsort(ranges, count, sizeof(t_range), comp);
+	free(buffer);
+	return (count);
+}
+
+int remove_overlap(t_range orig[200], t_range new[200], int size)
+{
+	int new_size;
+	int i;
+	int j;
+
+	new_size = 0;
+	i = 0;
+	while (i < size)
 	{
-		if (temp->certified_fresh == 1)
-			count++;
+		t_range range = orig[i];
+		for (j = i + 1; (j < size) && (range.max > orig[j].min); j++)
+		{
+			if (orig[j].max > range.max)
+				range.max = orig[j].max;
+		}
+		new[new_size] = range;
+		new_size++;
+		i = j;
 	}
-	printf("S = %i, i = %i\n", fresh, count);
-	fclose(file);
+	return (new_size);
+}
+
+t_range lst_new(char *buffer)
+{
+	t_range new;
+	int		dash_pos;
+
+	dash_pos = 0;
+	while (buffer[dash_pos] != '-')
+		dash_pos++;
+
+	new.min = atoll(buffer);
+	new.max = atoll(buffer + dash_pos + 1) + 1;
+	// printf("min = %lli, max = %lli\n", new->min, new->max);
+	return (new);
+}
+
+int check_ingredient(t_range ranges[200], char *buffer, int size)
+{
+	long long num = atoll(buffer);
+
+	for (int i = 0; i < size; i++)
+		if (ranges[i].min <= num && ranges[i].max >= num)
+			return (1);
 	return (0);
+}
+
+int comp(const void *a, const void *b)
+{
+	t_range *left = (t_range *) a;
+	t_range *right = (t_range *) b;
+
+	return (left->min > right->min);
 }
