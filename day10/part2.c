@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <inttypes.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -7,7 +8,7 @@
 
 #define BUF_SIZE 10
 
-#define HEAP_SIZE 1000
+#define HT_SIZE 32768
 
 typedef struct s_arr
 {
@@ -18,7 +19,6 @@ typedef struct s_arr
 
 typedef struct s_line
 {
-	t_arr		   final;
 	t_arr		  *joltage;
 	t_arr		  *switches;
 	struct s_line *next;
@@ -37,6 +37,76 @@ typedef struct s_heap
 	int		  capacity;
 	int		  size;
 } t_heap;
+
+// hash table, similar to python set
+typedef struct s_hash
+{
+	char		  *key;
+	int			   g;
+	struct s_hash *next;
+} t_hash;
+
+static t_hash *ht[HT_SIZE];
+
+uint32_t djb2(const char *s)
+{
+	uint32_t h = 5381;
+
+	while (*s)
+	{
+		// equivalent to h = h * 33 + *s;
+		h = ((h << 5) + h) + *s++;
+	}
+	return (h);
+}
+
+static int ht_get(const char *key)
+{
+	uint32_t idx = djb2(key) & (HT_SIZE - 1);
+	for (t_hash *e = ht[idx]; e != NULL; e = e->next)
+	{
+		if (strcmp(e->key, key) == 0)
+			return (e->g);
+	}
+	return (-1);
+}
+
+static void ht_put(const char *key, int g)
+{
+	uint32_t idx = djb2(key) & (HT_SIZE - 1);
+	for (t_hash *e = ht[idx]; e != NULL; e = e->next)
+	{
+		if (strcmp(e->key, key) == 0)
+		{
+			e->g = g;
+			return;
+		}
+	}
+	t_hash *new = malloc(sizeof(t_hash));
+	new->key = strdup(key);
+	new->g = g;
+	new->next = ht[idx];
+	ht[idx] = new;
+}
+
+void ht_clear(void)
+{
+	for (int i = 0; i < HT_SIZE; i++)
+	{
+		t_hash *e = ht[i];
+
+		while (e)
+		{
+			t_hash *new = e->next;
+			free(e->key);
+			free(e);
+			e = new;
+		}
+		ht[i] = NULL;
+	}
+}
+
+// uint32_t idx = djb2(key) & (HT_SIZE - 1);
 
 t_heap *heap_create(int capacity)
 {
@@ -66,7 +136,7 @@ void heap_sift_up(t_heap *heap, int i)
 	while (i > 0)
 	{
 		int parent = (i - 1) >> 1;
-		if (heap->array[parent]->f <= heap->array[parent]->f)
+		if (heap->array[parent]->f <= heap->array[i]->f)
 			break;
 		heap_swap(&heap->array[parent], &heap->array[i]);
 		i = parent;
@@ -133,25 +203,25 @@ t_astar *heap_pop(t_heap *heap)
 	return (min_node);
 }
 
+void heap_free(t_heap *heap)
+{
+	for (int i = 0; i < heap->size; i++)
+		free(heap->array[i]);
+	free(heap->array);
+	free(heap);
+}
+
 void init_line(t_line **head, char *buffer)
 {
 	t_line *new_line;
 
 	new_line = (t_line *) malloc(sizeof(t_line));
 	new_line->next = NULL;
-	new_line->final.size = 0;
 	new_line->switches = NULL;
 
 	int pos = 1;
 	while (buffer[pos] && buffer[pos] != ']')
-	{
-		if (buffer[pos] == '#')
-			new_line->final.array[new_line->final.size] = 1;
-		else if (buffer[pos] == '.')
-			new_line->final.array[new_line->final.size] = 0;
 		pos++;
-		new_line->final.size++;
-	}
 	pos += 3;
 
 	t_arr *temp = new_line->switches;
@@ -209,44 +279,129 @@ int heuristic(const int cur[BUF_SIZE], const int target[BUF_SIZE], int n)
 
 	for (int i = 0; i < n; i++)
 	{
-		int deficit = target[max_deficit] - cur[max_deficit];
+		int deficit = target[i] - cur[i];
 		if (deficit > max_deficit)
 			max_deficit = deficit;
 	}
 	return (max_deficit);
 }
 
-void apply_switch(const int	   cur[BUF_SIZE],
-				  const int	   target[BUF_SIZE],
-				  const int	   next[BUF_SIZE],
-				  const t_arr *s,
-				  int		   n)
+void apply_switch(
+	const int cur[BUF_SIZE], int next[BUF_SIZE], const int target[BUF_SIZE], const t_arr *s, int n)
 {
+	for (int i = 0; i < n; i++)
+		next[i] = cur[i];
+
+	for (int j = 0; j < s->size; j++)
+	{
+		next[s->array[j]] = next[s->array[j]] + 1;
+		// int index = s->array[j];
+		// if (index >= 0 && index < n)
+		// {
+		// 	next[index]++;
+		// }
+	}
 }
 
-int astar_search(t_line *line)
+void serialise_state(const int state[BUF_SIZE], int n, char *buf, int bufsize)
 {
-	int num_switches = 0;
+	int offset = 0;
+
+	for (int i = 0; i < n; i++)
+	{
+		int size = 0;
+		if (bufsize > offset)
+			size = bufsize - offset;
+		offset += snprintf(buf + offset, size, "%d ", state[i]);
+	}
+}
+
+int astar_search(t_line *line, int target[BUF_SIZE])
+{
+	int num_buttons = 0;
+	int n = line->joltage->size;
 
 	for (t_arr *temp = line->switches; temp; temp = temp->next)
-		num_switches++;
-	t_arr **sw = malloc(sizeof(t_arr *) * num_switches);
+		num_buttons++;
+	t_arr **switches = malloc(sizeof(t_arr *) * num_buttons);
 	{
 		int i = 0;
 		for (t_arr *s = line->switches; s; s = s->next)
-			sw[i++] = s;
+			switches[i++] = s;
 	}
-	
-	t_heap *heap = heap_create(256);
-	t_astar *node = malloc(sizeof(t_astar));
-	
-	node->g = 0;
-	node->f = heuristic(node->state, line->final.array, line->final.size);
-	heap_push(heap, node);
-	
+
+	for (int i = 0; i < HT_SIZE; i++)
+		ht[i] = NULL;
+
+	t_heap	*heap = heap_create(256);
+	t_astar *start = malloc(sizeof(t_astar));
+
+	char test[BUF_SIZE * 5];
+	int	 init_state[BUF_SIZE] = {0};
+
+	serialise_state(init_state, n, test, sizeof(test));
+	ht_put(test, 0);
+
+	for (int i = 0; i < n; i++)
+		start->state[i] = init_state[i];
+	start->g = 0;
+	start->f = heuristic(start->state, target, line->joltage->size);
+	heap_push(heap, start);
+
 	while (heap->size)
 	{
 		t_astar *current = heap_pop(heap);
+
+		serialise_state(current->state, n, test, sizeof(test));
+		int best_known = ht_get(test);
+		// check if current node surpasses best known g(n)
+		if (best_known >= 0 && current->g > best_known)
+		{
+			free(current);
+			continue;
+		}
+
+		int done = 1;
+		for (int i = 0; i < n; i++)
+		{
+			if (current->state[i] != target[i])
+			{
+				done = 0;
+				break;
+			}
+		}
+		if (done)
+		{
+			// FREEDOM
+			int result = current->g;
+			free(current);
+			heap_free(heap);
+			free(switches);
+			ht_clear();
+			return (result);
+		}
+
+		for (int index = 0; index < num_buttons; index++)
+		{
+			int next_state[BUF_SIZE];
+
+			apply_switch(current->state, next_state, target, switches[index], n);
+			int g2 = current->g + 1;
+
+			serialise_state(next_state, n, test, sizeof(test));
+			int prevg = ht_get(test);
+			if (prevg >= 0 && prevg <= g2)
+				continue;
+
+			ht_put(test, g2);
+			t_astar *new = malloc(sizeof(t_astar));
+			for (int i = 0; i < n; i++)
+				new->state[i] = next_state[i];
+			new->g = g2;
+			new->f = g2 + heuristic(next_state, target, n);
+			heap_push(heap, new);
+		}
+		free(current);
 	}
 
 	return (0);
@@ -271,6 +426,11 @@ int main()
 		buffer = NULL;
 		read = getline(&buffer, &bytes, file);
 	}
-	astar_search(head);
+	int result = 0;
+	for (t_line *temp = head; temp != NULL; temp = temp->next)
+	{
+		result += astar_search(temp, temp->joltage->array);
+		printf("res = %i\n", result);
+	}
 	return (0);
 }
