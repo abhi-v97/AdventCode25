@@ -3,12 +3,13 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
 #include "stdio.h"
 
 #define BUF_SIZE 10
 
-#define HT_SIZE 32768
+#define HT_SIZE 128000
 
 typedef struct s_arr
 {
@@ -41,49 +42,58 @@ typedef struct s_heap
 // hash table, similar to python set
 typedef struct s_hash
 {
-	char		  *key;
+	// char		  *key;
+	uint16_t	   key[BUF_SIZE];
 	int			   g;
 	struct s_hash *next;
 } t_hash;
 
 static t_hash *ht[HT_SIZE];
 
-uint32_t djb2(const char *s)
+uint32_t djb2(const void *buffer, size_t len)
 {
-	uint32_t h = 5381;
+	uint32_t			 h = 5381;
+	const unsigned char *s = buffer;
 
-	while (*s)
-	{
-		// equivalent to h = h * 33 + *s;
-		h = ((h << 5) + h) + *s++;
-	}
+	// equivalent to h = h * 33 + *s;
+	for (size_t i = 0; i < len; i++)
+		h = ((h << 5) + h) + s[i];
 	return (h);
 }
 
-static int ht_get(const char *key)
+void pack_state(const int state[BUF_SIZE], int n, uint16_t keybuf[BUF_SIZE])
 {
-	uint32_t idx = djb2(key) & (HT_SIZE - 1);
+	for (int i = 0; i < n; i++)
+		keybuf[i] = (uint16_t) state[i];
+	for (int i = n; i < BUF_SIZE; i++)
+		keybuf[i] = 0;
+}
+
+static int ht_get(const uint16_t key[BUF_SIZE])
+{
+	uint32_t idx = djb2(key, sizeof(uint16_t) * BUF_SIZE) & (HT_SIZE - 1);
+
 	for (t_hash *e = ht[idx]; e != NULL; e = e->next)
 	{
-		if (strcmp(e->key, key) == 0)
+		if (memcmp(e->key, key, sizeof(uint16_t) * BUF_SIZE) == 0)
 			return (e->g);
 	}
 	return (-1);
 }
 
-static void ht_put(const char *key, int g)
+static void ht_put(const uint16_t key[BUF_SIZE], int g)
 {
-	uint32_t idx = djb2(key) & (HT_SIZE - 1);
+	uint32_t idx = djb2(key, sizeof(uint16_t) * BUF_SIZE) & (HT_SIZE - 1);
 	for (t_hash *e = ht[idx]; e != NULL; e = e->next)
 	{
-		if (strcmp(e->key, key) == 0)
+		if (memcmp(e->key, key, sizeof(uint16_t) * BUF_SIZE) == 0)
 		{
 			e->g = g;
 			return;
 		}
 	}
 	t_hash *new = malloc(sizeof(t_hash));
-	new->key = strdup(key);
+	memcpy(new->key, key, sizeof(uint16_t) * BUF_SIZE);
 	new->g = g;
 	new->next = ht[idx];
 	ht[idx] = new;
@@ -98,7 +108,7 @@ void ht_clear(void)
 		while (e)
 		{
 			t_hash *new = e->next;
-			free(e->key);
+			// free(e->key);
 			free(e);
 			e = new;
 		}
@@ -286,7 +296,7 @@ int heuristic(const int cur[BUF_SIZE], const int target[BUF_SIZE], int n)
 	return (max_deficit);
 }
 
-void apply_switch(
+int apply_switch(
 	const int cur[BUF_SIZE], int next[BUF_SIZE], const int target[BUF_SIZE], const t_arr *s, int n)
 {
 	for (int i = 0; i < n; i++)
@@ -294,13 +304,14 @@ void apply_switch(
 
 	for (int j = 0; j < s->size; j++)
 	{
-		next[s->array[j]] = next[s->array[j]] + 1;
-		// int index = s->array[j];
-		// if (index >= 0 && index < n)
-		// {
-		// 	next[index]++;
-		// }
+		int index = s->array[j];
+		if (index < 0 || index >= n)
+			continue;
+		next[index] = next[index] + 1;
+		if (next[index] > target[index])
+			return (1);
 	}
+	return (0);
 }
 
 void serialise_state(const int state[BUF_SIZE], int n, char *buf, int bufsize)
@@ -316,10 +327,53 @@ void serialise_state(const int state[BUF_SIZE], int n, char *buf, int bufsize)
 	}
 }
 
+int kickstart(t_arr **switches, int target[BUF_SIZE], int init_state[BUF_SIZE], int n)
+{
+	int best_index = -1;
+	int switch_count[BUF_SIZE] = {0};
+
+	for (t_arr *temp = *switches; temp != NULL; temp = temp->next)
+	{
+		for (int i = 0; i < temp->size; i++)
+			switch_count[temp->array[i]] = switch_count[temp->array[i]] + 1;
+	}
+
+	int start_g = 0;
+	for (int i = 0; i < n; i++)
+	{
+		if (switch_count[i] == 1 && target[i] > start_g)
+		{
+			best_index = i;
+			start_g = target[i];
+		}
+	}
+	if (start_g != 0)
+	{
+		int best_switch = -1;
+		for (int i = 0; switches[i]; i++)
+		{
+			for (int j = 0; j < switches[i]->size; j++)
+			{
+				if (switches[i]->array[j] == best_index)
+				{
+					best_switch = i;
+					break;
+				}
+			}
+			if (best_switch >= 0)
+				break;
+		}
+		for (int i = 0; i < switches[best_switch]->size; i++)
+			init_state[switches[best_switch]->array[i]] = start_g;
+	}
+	return (start_g);
+}
+
 int astar_search(t_line *line, int target[BUF_SIZE])
 {
 	int num_buttons = 0;
 	int n = line->joltage->size;
+	int work_done = 0;
 
 	for (t_arr *temp = line->switches; temp; temp = temp->next)
 		num_buttons++;
@@ -336,15 +390,16 @@ int astar_search(t_line *line, int target[BUF_SIZE])
 	t_heap	*heap = heap_create(256);
 	t_astar *start = malloc(sizeof(t_astar));
 
-	char test[BUF_SIZE * 5];
-	int	 init_state[BUF_SIZE] = {0};
+	uint16_t test[BUF_SIZE * 5];
+	int		 init_state[BUF_SIZE] = {0};
 
-	serialise_state(init_state, n, test, sizeof(test));
-	ht_put(test, 0);
+	int best_start = kickstart(switches, target, init_state, n);
+	pack_state(init_state, n, test);
+	ht_put(test, best_start);
 
 	for (int i = 0; i < n; i++)
 		start->state[i] = init_state[i];
-	start->g = 0;
+	start->g = best_start;
 	start->f = heuristic(start->state, target, line->joltage->size);
 	heap_push(heap, start);
 
@@ -352,7 +407,8 @@ int astar_search(t_line *line, int target[BUF_SIZE])
 	{
 		t_astar *current = heap_pop(heap);
 
-		serialise_state(current->state, n, test, sizeof(test));
+		// serialise_state(current->state, n, test, sizeof(test));
+		pack_state(current->state, n, test);
 		int best_known = ht_get(test);
 		// check if current node surpasses best known g(n)
 		if (best_known >= 0 && current->g > best_known)
@@ -378,6 +434,7 @@ int astar_search(t_line *line, int target[BUF_SIZE])
 			heap_free(heap);
 			free(switches);
 			ht_clear();
+			printf("work done: %i\n", work_done);
 			return (result);
 		}
 
@@ -385,10 +442,12 @@ int astar_search(t_line *line, int target[BUF_SIZE])
 		{
 			int next_state[BUF_SIZE];
 
-			apply_switch(current->state, next_state, target, switches[index], n);
+			if (apply_switch(current->state, next_state, target, switches[index], n))
+				continue;
 			int g2 = current->g + 1;
 
-			serialise_state(next_state, n, test, sizeof(test));
+			pack_state(next_state, n, test);
+			// serialise_state(next_state, n, test, sizeof(test));
 			int prevg = ht_get(test);
 			if (prevg >= 0 && prevg <= g2)
 				continue;
@@ -402,6 +461,7 @@ int astar_search(t_line *line, int target[BUF_SIZE])
 			heap_push(heap, new);
 		}
 		free(current);
+		work_done++;
 	}
 
 	return (0);
